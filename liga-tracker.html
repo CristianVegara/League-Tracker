@@ -228,29 +228,6 @@
     opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
-
-  /* Modal / wizard */
-  .modal-overlay{
-    position:fixed;inset:0;background:rgba(8,10,14,.72);
-    display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;
-  }
-  .modal-panel{
-    background:var(--surface);border:1px solid var(--border);border-radius:14px;
-    padding:26px;width:100%;max-width:460px;
-  }
-  .wizard-header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:18px;}
-  .wizard-header h3{font-family:var(--font-display);font-size:20px;margin:0;text-transform:uppercase;letter-spacing:.02em;}
-  .wizard-progress{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);white-space:nowrap;}
-  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;}
-  .modal-panel .field{margin-bottom:4px;}
-  .modal-panel .hint strong{color:var(--text);}
-
-  /* Matches toolbar */
-  .matches-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
-  .matches-toolbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-
-  .score-input{width:52px !important;text-align:center;font-weight:700;font-size:15px;padding:6px 4px;}
-  .badge.pending{background:rgba(139,147,163,.15);color:var(--text-dim);}
 </style>
 </head>
 <body>
@@ -288,9 +265,7 @@
 
   const state = {
     data: loadData(),
-    activeTab: "jugadores", // jugadores | partidos | clasificacion
-    wizard: null, // { step, name, players, numRounds }
-    manualFormOpen: false
+    activeTab: "jugadores" // jugadores | partidos | clasificacion
   };
 
   function getActiveLeague(){
@@ -309,89 +284,6 @@
     return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
 
-  // ---------- Round-robin fixture generation ----------
-  function isPlayed(m){
-    return m.mapsA !== null && m.mapsA !== undefined && m.mapsB !== null && m.mapsB !== undefined;
-  }
-
-  // Classic "circle method": returns array of rounds, each an array of [playerA, playerB] pairs.
-  // Guarantees every pair plays exactly once, and no player appears twice within the same round.
-  function circleMethod(playerIds){
-    let ids = playerIds.slice();
-    if(ids.length % 2 !== 0) ids.push(null); // null = bye
-    const n = ids.length;
-    const fixed = ids[0];
-    let rest = ids.slice(1);
-    const rounds = [];
-    for(let r = 0; r < n - 1; r++){
-      const roundIds = [fixed, ...rest];
-      const roundMatches = [];
-      for(let i = 0; i < n / 2; i++){
-        const a = roundIds[i];
-        const b = roundIds[n - 1 - i];
-        if(a !== null && b !== null) roundMatches.push([a, b]);
-      }
-      rounds.push(roundMatches);
-      rest.unshift(rest.pop());
-    }
-    return rounds;
-  }
-
-  // Interleave matches across the classic rounds so consecutive matches in the
-  // flat list tend to involve different players (helps even distribution later).
-  function flattenInterleaved(rounds){
-    const maxLen = Math.max(0, ...rounds.map(r => r.length));
-    const flat = [];
-    for(let i = 0; i < maxLen; i++){
-      for(let r = 0; r < rounds.length; r++){
-        if(rounds[r][i]) flat.push(rounds[r][i]);
-      }
-    }
-    return flat;
-  }
-
-  // Greedily bucket matches into `numRounds` slots: prefer the least-filled round
-  // where neither player already appears; falls back to the least-filled round
-  // overall when that's impossible (only happens if numRounds < minimum rounds needed).
-  function distributeMatches(matches, numRounds){
-    const buckets = Array.from({ length: numRounds }, () => ({ matches: [], used: new Set() }));
-    matches.forEach(([a, b]) => {
-      let candidates = buckets
-        .map((bkt, idx) => ({ idx, bkt }))
-        .filter(o => !o.bkt.used.has(a) && !o.bkt.used.has(b));
-      if(candidates.length === 0){
-        candidates = buckets.map((bkt, idx) => ({ idx, bkt }));
-      }
-      candidates.sort((x, y) => x.bkt.matches.length - y.bkt.matches.length || x.idx - y.idx);
-      const chosen = candidates[0].bkt;
-      chosen.matches.push([a, b]);
-      chosen.used.add(a);
-      chosen.used.add(b);
-    });
-    return buckets.map(b => b.matches);
-  }
-
-  function recommendedRounds(playerCount){
-    return playerCount % 2 === 0 ? playerCount - 1 : playerCount;
-  }
-
-  function totalMatchesFor(playerCount){
-    return playerCount * (playerCount - 1) / 2;
-  }
-
-  function generateFixtures(playerIds, numRounds){
-    const rounds = circleMethod(playerIds);
-    const flat = flattenInterleaved(rounds);
-    const buckets = distributeMatches(flat, numRounds);
-    const matches = [];
-    buckets.forEach((bucketMatches, idx) => {
-      bucketMatches.forEach(([a, b]) => {
-        matches.push({ id: uid(), jornada: idx + 1, playerAId: a, playerBId: b, mapsA: null, mapsB: null });
-      });
-    });
-    return matches;
-  }
-
   // ---------- Standings calculation ----------
   function computeStandings(league){
     const stats = {};
@@ -399,7 +291,6 @@
       stats[p.id] = { player:p, PJ:0, G:0, E:0, P:0, MF:0, MC:0, DM:0, Pts:0 };
     });
     league.matches.forEach(m => {
-      if(!isPlayed(m)) return;
       const a = stats[m.playerAId], b = stats[m.playerBId];
       if(!a || !b) return;
       a.PJ++; b.PJ++;
@@ -434,11 +325,6 @@
   const app = document.getElementById("app");
 
   function render(){
-    if(state.wizard){
-      app.innerHTML = renderWizard();
-      bindWizardEvents();
-      return;
-    }
     const league = getActiveLeague();
     if(!league){
       app.innerHTML = renderHome();
@@ -449,26 +335,18 @@
     }
   }
 
-  function openWizard(){
-    state.wizard = { step: 1, name: "", players: [], numRounds: null };
-    render();
-  }
-
   function renderHome(){
     const leagues = state.data.leagues;
-    let cards = leagues.map(l => {
-      const played = l.matches.filter(isPlayed).length;
-      return `
+    let cards = leagues.map(l => `
       <div class="league-card" data-id="${l.id}">
         <div class="name">${escapeHtml(l.name)}</div>
-        <div class="meta">${l.players.length} jugadores &middot; ${played}/${l.matches.length} partidos jugados</div>
+        <div class="meta">${l.players.length} jugadores &middot; ${l.matches.length} partidos</div>
         <div class="row">
           <button class="btn btn-accent open-league" data-id="${l.id}">Abrir</button>
           <button class="btn btn-ghost btn-sm delete-league" data-id="${l.id}" title="Eliminar liga">Eliminar</button>
         </div>
       </div>
-    `;
-    }).join("");
+    `).join("");
 
     return `
       <div class="app-header">
@@ -488,7 +366,16 @@
   }
 
   function bindHomeEvents(){
-    document.getElementById("new-league-btn").addEventListener("click", openWizard);
+    document.getElementById("new-league-btn").addEventListener("click", () => {
+      const name = prompt("Nombre de la nueva liga:");
+      if(!name) return;
+      const league = { id: uid(), name: name.trim(), createdAt: Date.now(), players: [], matches: [] };
+      state.data.leagues.push(league);
+      state.data.activeLeagueId = league.id;
+      state.activeTab = "jugadores";
+      saveData();
+      render();
+    });
     document.querySelectorAll(".open-league").forEach(btn => {
       btn.addEventListener("click", () => {
         state.data.activeLeagueId = btn.dataset.id;
@@ -538,148 +425,6 @@
     e.target.value = "";
   }
 
-  // ---------- New league wizard ----------
-  function renderWizard(){
-    const w = state.wizard;
-    let inner;
-    if(w.step === 1) inner = wizardStepName(w);
-    else if(w.step === 2) inner = wizardStepPlayers(w);
-    else inner = wizardStepRounds(w);
-    return `
-      <div class="modal-overlay" id="wizard-overlay">
-        <div class="modal-panel">${inner}</div>
-      </div>
-    `;
-  }
-
-  function wizardStepName(w){
-    return `
-      <div class="wizard-header"><h3>Nueva liga</h3><span class="wizard-progress">Paso 1 de 3</span></div>
-      <form id="wizard-step1">
-        <div class="field">
-          <label for="wizard-name">Nombre de la liga</label>
-          <input type="text" id="wizard-name" value="${escapeHtml(w.name)}" placeholder="Ej. Liga de Verano" autofocus>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" id="wizard-cancel">Cancelar</button>
-          <button type="submit" class="btn btn-accent">Continuar</button>
-        </div>
-      </form>
-    `;
-  }
-
-  function wizardStepPlayers(w){
-    const chips = w.players.map(p => `
-      <div class="player-chip">
-        ${escapeHtml(p.name)}
-        <button type="button" class="remove-wizard-player" data-id="${p.id}" title="Quitar">&times;</button>
-      </div>
-    `).join("") || `<span class="hint">Añade jugadores para empezar.</span>`;
-
-    return `
-      <div class="wizard-header"><h3>${escapeHtml(w.name)}</h3><span class="wizard-progress">Paso 2 de 3</span></div>
-      <form id="wizard-add-player" class="form-row">
-        <div class="field">
-          <label for="wizard-player-name">Jugador</label>
-          <input type="text" id="wizard-player-name" placeholder="Nombre del jugador" autofocus>
-        </div>
-        <button class="btn btn-accent" type="submit">Añadir</button>
-      </form>
-      <div class="player-list">${chips}</div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="wizard-back">Atrás</button>
-        <button type="button" class="btn btn-accent" id="wizard-next-2">Continuar</button>
-      </div>
-    `;
-  }
-
-  function wizardStepRounds(w){
-    const n = w.players.length;
-    const total = totalMatchesFor(n);
-    const rec = recommendedRounds(n);
-    const avg = (total / rec).toFixed(1);
-    return `
-      <div class="wizard-header"><h3>${escapeHtml(w.name)}</h3><span class="wizard-progress">Paso 3 de 3</span></div>
-      <p class="hint">Con ${n} jugadores, cada uno se enfrenta a todos los demás una vez: <strong>${total} partidos</strong> en total.</p>
-      <div class="field">
-        <label for="wizard-rounds">Número de jornadas</label>
-        <input type="number" id="wizard-rounds" min="1" max="${total}" value="${w.numRounds ?? rec}">
-      </div>
-      <p class="hint">Recomendado: <strong>${rec} jornadas</strong> (~${avg} partidos por jornada, sin repetir jugador en la misma jornada). Elige más jornadas para repartir los partidos, o menos para tener varios partidos por jornada.</p>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="wizard-back2">Atrás</button>
-        <button type="button" class="btn btn-accent" id="wizard-generate">Generar calendario</button>
-      </div>
-    `;
-  }
-
-  function bindWizardEvents(){
-    const w = state.wizard;
-    const overlay = document.getElementById("wizard-overlay");
-    overlay.addEventListener("click", (e) => {
-      if(e.target === overlay){ state.wizard = null; render(); }
-    });
-
-    const step1 = document.getElementById("wizard-step1");
-    if(step1){
-      document.getElementById("wizard-cancel").addEventListener("click", () => { state.wizard = null; render(); });
-      step1.addEventListener("submit", (e) => {
-        e.preventDefault();
-        const val = document.getElementById("wizard-name").value.trim();
-        if(!val){ alert("Ponle un nombre a la liga."); return; }
-        w.name = val;
-        w.step = 2;
-        render();
-      });
-    }
-
-    const addPlayerForm = document.getElementById("wizard-add-player");
-    if(addPlayerForm){
-      addPlayerForm.addEventListener("submit", (e) => {
-        e.preventDefault();
-        const input = document.getElementById("wizard-player-name");
-        const name = input.value.trim();
-        if(!name) return;
-        w.players.push({ id: uid(), name });
-        render();
-      });
-      document.querySelectorAll(".remove-wizard-player").forEach(btn => {
-        btn.addEventListener("click", () => {
-          w.players = w.players.filter(p => p.id !== btn.dataset.id);
-          render();
-        });
-      });
-      document.getElementById("wizard-back").addEventListener("click", () => { w.step = 1; render(); });
-      document.getElementById("wizard-next-2").addEventListener("click", () => {
-        if(w.players.length < 2){ alert("Añade al menos 2 jugadores."); return; }
-        w.step = 3;
-        render();
-      });
-    }
-
-    const genBtn = document.getElementById("wizard-generate");
-    if(genBtn){
-      document.getElementById("wizard-back2").addEventListener("click", () => { w.step = 2; render(); });
-      genBtn.addEventListener("click", () => {
-        const n = w.players.length;
-        const total = totalMatchesFor(n);
-        let numRounds = parseInt(document.getElementById("wizard-rounds").value, 10);
-        if(!numRounds || numRounds < 1) numRounds = recommendedRounds(n);
-        if(numRounds > total) numRounds = total;
-        const playerIds = w.players.map(p => p.id);
-        const matches = generateFixtures(playerIds, numRounds);
-        const league = { id: uid(), name: w.name, createdAt: Date.now(), players: w.players, matches };
-        state.data.leagues.push(league);
-        state.data.activeLeagueId = league.id;
-        state.activeTab = "partidos";
-        state.wizard = null;
-        saveData();
-        render();
-        showToast(`Liga creada: ${total} partidos en ${numRounds} jornadas`);
-      });
-    }
-  }
-
   function renderLeague(league){
     return `
       <div class="league-topbar">
@@ -725,31 +470,12 @@
     `;
   }
 
-  function renderMatchRow(m, league){
-    const played = isPlayed(m);
-    return `
-      <form class="match-row" data-id="${m.id}">
-        <div class="pname">${escapeHtml(playerName(league,m.playerAId))}</div>
-        <input type="number" class="score-input" name="mapsA" min="0" placeholder="-" value="${played ? m.mapsA : ""}">
-        <div class="dash">&ndash;</div>
-        <input type="number" class="score-input" name="mapsB" min="0" placeholder="-" value="${played ? m.mapsB : ""}">
-        <div class="pname away">${escapeHtml(playerName(league,m.playerBId))}</div>
-        ${played ? matchResultBadge(m, league) : `<span class="badge pending">Pendiente</span>`}
-        <div class="match-actions">
-          <button type="submit" class="btn btn-accent btn-sm">${played ? "Actualizar" : "Guardar"}</button>
-          <button type="button" class="btn btn-ghost btn-sm delete-match" data-id="${m.id}">Eliminar</button>
-        </div>
-      </form>
-    `;
-  }
-
   function renderMatchesTab(league){
     if(league.players.length < 2){
       return `<div class="empty-state"><div class="big">Añade al menos 2 jugadores</div>Ve a la pestaña Jugadores para empezar.</div>`;
     }
     const options = league.players.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
     const maxJornada = league.matches.reduce((m, x) => Math.max(m, x.jornada || 1), 0);
-    const playedCount = league.matches.filter(isPlayed).length;
 
     const groups = {};
     league.matches.forEach(m => {
@@ -760,47 +486,51 @@
     const matchesHtml = jornadaKeys.map(j => `
       <div class="jornada-group">
         <div class="jornada-label">Jornada ${j}</div>
-        ${groups[j].map(m => renderMatchRow(m, league)).join("")}
+        ${groups[j].map(m => `
+          <div class="match-row" data-id="${m.id}">
+            <div class="pname">${escapeHtml(playerName(league,m.playerAId))}</div>
+            <div class="score">${m.mapsA}</div>
+            <div class="dash">&ndash;</div>
+            <div class="score">${m.mapsB}</div>
+            <div class="pname away">${escapeHtml(playerName(league,m.playerBId))}</div>
+            ${matchResultBadge(m, league)}
+            <div class="match-actions">
+              <button class="btn btn-ghost btn-sm delete-match" data-id="${m.id}">Eliminar</button>
+            </div>
+          </div>
+        `).join("")}
       </div>
-    `).join("") || `<div class="hint">Todavía no hay partidos programados. Usa "Regenerar calendario" o añade partidos manualmente.</div>`;
+    `).join("") || `<div class="hint">Todavía no hay partidos registrados.</div>`;
 
     return `
       <div class="panel">
-        <div class="matches-toolbar">
-          <h3 style="margin:0;">Calendario</h3>
-          <div class="matches-toolbar-actions">
-            <span class="hint" style="margin:0;">${playedCount}/${league.matches.length} jugados</span>
-            <button class="btn btn-sm" id="regen-schedule-btn">Regenerar calendario</button>
-            <button class="btn btn-sm" id="toggle-manual-form">${state.manualFormOpen ? "Ocultar formulario" : "+ Partido manual"}</button>
+        <h3>Añadir partido</h3>
+        <form id="add-match-form" class="form-row">
+          <div class="field">
+            <label for="m-jornada">Jornada</label>
+            <input type="number" id="m-jornada" min="1" value="${maxJornada + 1 || 1}" required>
           </div>
-        </div>
-        ${state.manualFormOpen ? `
-          <form id="add-match-form" class="form-row" style="margin-top:16px;">
-            <div class="field">
-              <label for="m-jornada">Jornada</label>
-              <input type="number" id="m-jornada" min="1" value="${maxJornada + 1 || 1}" required>
-            </div>
-            <div class="field">
-              <label for="m-playerA">Jugador local</label>
-              <select id="m-playerA" required>${options}</select>
-            </div>
-            <div class="field">
-              <label for="m-mapsA">Mapas</label>
-              <input type="number" id="m-mapsA" min="0" value="0" required>
-            </div>
-            <div class="field">
-              <label for="m-mapsB">Mapas</label>
-              <input type="number" id="m-mapsB" min="0" value="0" required>
-            </div>
-            <div class="field">
-              <label for="m-playerB">Jugador visitante</label>
-              <select id="m-playerB" required>${options}</select>
-            </div>
-            <button class="btn btn-accent" type="submit">Añadir partido</button>
-          </form>
-        ` : ""}
+          <div class="field">
+            <label for="m-playerA">Jugador local</label>
+            <select id="m-playerA" required>${options}</select>
+          </div>
+          <div class="field">
+            <label for="m-mapsA">Mapas</label>
+            <input type="number" id="m-mapsA" min="0" value="0" required>
+          </div>
+          <div class="field">
+            <label for="m-mapsB">Mapas</label>
+            <input type="number" id="m-mapsB" min="0" value="0" required>
+          </div>
+          <div class="field">
+            <label for="m-playerB">Jugador visitante</label>
+            <select id="m-playerB" required>${options}</select>
+          </div>
+          <button class="btn btn-accent" type="submit">Añadir partido</button>
+        </form>
       </div>
       <div class="panel">
+        <h3>Partidos</h3>
         ${matchesHtml}
       </div>
     `;
@@ -919,61 +649,14 @@
         saveData();
         render();
       });
-    }
-
-    const toggleManualBtn = document.getElementById("toggle-manual-form");
-    if(toggleManualBtn){
-      toggleManualBtn.addEventListener("click", () => {
-        state.manualFormOpen = !state.manualFormOpen;
-        render();
+      document.querySelectorAll(".delete-match").forEach(btn => {
+        btn.addEventListener("click", () => {
+          league.matches = league.matches.filter(m => m.id !== btn.dataset.id);
+          saveData();
+          render();
+        });
       });
     }
-
-    const regenBtn = document.getElementById("regen-schedule-btn");
-    if(regenBtn){
-      regenBtn.addEventListener("click", () => {
-        if(league.players.length < 2){ alert("Necesitas al menos 2 jugadores."); return; }
-        const total = totalMatchesFor(league.players.length);
-        const rec = recommendedRounds(league.players.length);
-        const input = prompt(`¿En cuántas jornadas quieres repartir los ${total} partidos? (recomendado: ${rec})`, rec);
-        if(input === null) return;
-        let numRounds = parseInt(input, 10);
-        if(!numRounds || numRounds < 1) numRounds = rec;
-        if(numRounds > total) numRounds = total;
-        if(!confirm("Esto borrará todos los partidos y resultados actuales de esta liga y generará un calendario nuevo. ¿Continuar?")) return;
-        const playerIds = league.players.map(p => p.id);
-        league.matches = generateFixtures(playerIds, numRounds);
-        saveData();
-        render();
-        showToast("Calendario regenerado");
-      });
-    }
-
-    document.querySelectorAll(".match-row").forEach(form => {
-      form.addEventListener("submit", (e) => {
-        e.preventDefault();
-        const id = form.dataset.id;
-        const match = league.matches.find(m => m.id === id);
-        if(!match) return;
-        const aVal = form.querySelector('[name="mapsA"]').value;
-        const bVal = form.querySelector('[name="mapsB"]').value;
-        if(aVal === "" || bVal === ""){
-          alert("Introduce el resultado de ambos jugadores.");
-          return;
-        }
-        match.mapsA = parseInt(aVal, 10) || 0;
-        match.mapsB = parseInt(bVal, 10) || 0;
-        saveData();
-        render();
-      });
-    });
-    document.querySelectorAll(".delete-match").forEach(btn => {
-      btn.addEventListener("click", () => {
-        league.matches = league.matches.filter(m => m.id !== btn.dataset.id);
-        saveData();
-        render();
-      });
-    });
   }
 
   render();
