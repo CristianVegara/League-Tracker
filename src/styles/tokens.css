@@ -1,0 +1,26 @@
+:root {
+  --bg: #111111;
+  --surface: #1b1d20;
+  --surface-2: #24272b;
+  --surface-3: #2d3136;
+  --border: #3b4148;
+  --border-hover: #59616b;
+  --text: #f6f3ee;
+  --text-dim: #a7adb5;
+  --accent: #f59e0b;
+  --accent-strong: #fbbf24;
+  --accent-glow: rgba(245, 158, 11, 0.18);
+  --win: #10b981;
+  --win-bg: rgba(16, 185, 129, 0.12);
+  --draw: #8b929c;
+  --draw-bg: rgba(139, 146, 156, 0.14);
+  --loss: #ef4444;
+  --loss-bg: rgba(239, 68, 68, 0.12);
+  --gold: #fbbf24;
+  --silver: #c7ccd4;
+  --bronze: #d97706;
+  --shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+  --font-display: "Oswald", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}

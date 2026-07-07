@@ -1,0 +1,12 @@
+import "./styles/tokens.css";
+import "./styles/base.css";
+import "./styles/layout.css";
+import "./styles/components.css";
+import "./styles/pages.css";
+import "./styles/responsive.css";
+
+import { render } from "./app/router.js";
+import { bindToastEvents } from "./ui/components/toast.js";
+
+bindToastEvents();
+render();
