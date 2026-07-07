@@ -80,6 +80,12 @@
   .btn-ghost:hover{color:var(--loss);border-color:transparent;background:transparent;}
   .btn-sm{padding:6px 10px;font-size:12px;border-radius:6px;}
   .btn:focus-visible, input:focus-visible, select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;border-color:var(--border) !important;}
+  .score-display{
+    font-family:var(--font-mono);font-weight:700;font-size:15px;background:var(--surface);
+    border:1px solid var(--border);border-radius:6px;padding:3px 9px;min-width:26px;text-align:center;
+    display:inline-block;
+  }
 
   /* Home / league cards */
   .league-grid{
@@ -244,6 +250,9 @@
   .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;}
   .modal-panel .field{margin-bottom:4px;}
   .modal-panel .hint strong{color:var(--text);}
+  .radio-group{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+  .radio-option{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500;cursor:pointer;}
+  .radio-option input{width:auto;}
 
   /* Matches toolbar */
   .matches-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
@@ -251,6 +260,33 @@
 
   .score-input{width:52px !important;text-align:center;font-weight:700;font-size:15px;padding:6px 4px;}
   .badge.pending{background:rgba(139,147,163,.15);color:var(--text-dim);}
+
+  /* Home sections */
+  .comp-section{margin-bottom:38px;}
+  .section-header{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;
+  }
+  .section-header h2{
+    font-family:var(--font-display);font-size:20px;text-transform:uppercase;letter-spacing:.02em;margin:0;
+  }
+  .section-header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .filter-pills{
+    display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:20px;padding:3px;
+  }
+  .filter-pill{
+    background:none;border:none;color:var(--text-dim);font-size:12px;font-weight:600;
+    padding:5px 12px;border-radius:16px;
+  }
+  .filter-pill.active{background:var(--accent);color:#1a1206;}
+  .filter-pill:hover:not(.active){color:var(--text);}
+  .card-badges{display:flex;gap:6px;margin:2px 0 4px;}
+  .status-badge{
+    font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;
+    padding:3px 9px;border-radius:5px;font-weight:700;
+  }
+  .status-badge.active{background:rgba(76,175,125,.15);color:var(--win);}
+  .status-badge.finished{background:rgba(139,147,163,.18);color:var(--text-dim);}
 
   /* Tournament */
   .type-badge{
@@ -321,9 +357,10 @@
 
   const state = {
     data: loadData(),
-    activeTab: "jugadores", // jugadores | partidos | clasificacion
-    wizard: null, // { step, name, players, numRounds }
-    manualFormOpen: false
+    activeTab: "jugadores", // jugadores | partidos | clasificacion | rondas | playoffs
+    wizard: null, // { step, type, name, players, numRounds }
+    manualFormOpen: false,
+    homeFilters: { league: "all", tournament: "all" } // all | active | finished
   };
 
   function getActiveLeague(){
@@ -340,6 +377,22 @@
 
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function isFinished(comp){
+    return comp.status === "finished";
+  }
+
+  function playoffsOn(t){
+    return t.playoffsEnabled !== false;
+  }
+
+  function formatDate(ts){
+    if(!ts) return "";
+    const d = new Date(ts);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    return `${dd}/${mm}/${d.getFullYear()}`;
   }
 
   // ---------- Round-robin fixture generation ----------
@@ -632,6 +685,11 @@
   }
 
   function tournamentChampion(t){
+    if(!playoffsOn(t)){
+      if(!isFinished(t)) return null;
+      const standings = computeSwissStandings(t);
+      return standings.length ? standings[0].player.name : null;
+    }
     if(!t.playoffs) return null;
     const rounds = t.playoffs.rounds;
     const finalRound = rounds[rounds.length - 1];
@@ -717,40 +775,76 @@
     render();
   }
 
-  function renderHome(){
-    const leagues = state.data.leagues;
-    let cards = leagues.map(l => {
-      const isT = l.type === "tournament";
-      let meta;
-      if(isT){
-        const champ = tournamentChampion(l);
-        meta = `${l.players.length} jugadores &middot; Ronda ${l.currentRound}/${l.swissRounds}${champ ? ` &middot; Campeón: ${escapeHtml(champ)}` : ""}`;
-      } else {
-        const played = l.matches.filter(isPlayed).length;
-        meta = `${l.players.length} jugadores &middot; ${played}/${l.matches.length} partidos jugados`;
-      }
-      return `
-      <div class="league-card" data-id="${l.id}">
-        <div class="name">${escapeHtml(l.name)} <span class="type-badge">${isT ? "Torneo" : "Liga"}</span></div>
-        <div class="meta">${meta}</div>
+  function renderCompetitionCard(c){
+    const finished = isFinished(c);
+    const isT = c.type === "tournament";
+    let progress;
+    if(isT){
+      const champ = tournamentChampion(c);
+      if(champ) progress = `Campeón: ${escapeHtml(champ)}`;
+      else if(c.playoffs) progress = "Playoffs en curso";
+      else progress = `Ronda ${c.currentRound}/${c.swissRounds}`;
+    } else {
+      const played = c.matches.filter(isPlayed).length;
+      progress = `${played}/${c.matches.length} partidos jugados`;
+    }
+    const created = formatDate(c.createdAt);
+    return `
+      <div class="league-card" data-id="${c.id}">
+        <div class="name">${escapeHtml(c.name)}</div>
+        <div class="card-badges">
+          <span class="status-badge ${finished?"finished":"active"}">${finished?"Finalizada":"Activa"}</span>
+        </div>
+        <div class="meta">${c.players.length} jugadores &middot; ${progress}</div>
+        ${created ? `<div class="meta">Creada el ${created}</div>` : ""}
         <div class="row">
-          <button class="btn btn-accent open-league" data-id="${l.id}">Abrir</button>
-          <button class="btn btn-ghost btn-sm delete-league" data-id="${l.id}" title="Eliminar">Eliminar</button>
+          <button class="btn btn-accent open-league" data-id="${c.id}">Abrir</button>
+          <button class="btn btn-ghost btn-sm delete-league" data-id="${c.id}" title="Eliminar">Eliminar</button>
         </div>
       </div>
     `;
-    }).join("");
+  }
+
+  function renderCompetitionSection(title, type, items, filter, newBtnId, newBtnLabel){
+    const filtered = items.filter(c => {
+      if(filter === "active") return !isFinished(c);
+      if(filter === "finished") return isFinished(c);
+      return true;
+    });
+    const emptyLabel = filter === "active" ? "activas" : filter === "finished" ? "finalizadas" : "";
+    const cards = filtered.map(renderCompetitionCard).join("")
+      || `<div class="empty-state" style="grid-column:1/-1;">No hay ${title.toLowerCase()} ${emptyLabel} todavía.</div>`;
+
+    return `
+      <section class="comp-section">
+        <div class="section-header">
+          <h2>${title}</h2>
+          <div class="section-header-actions">
+            <div class="filter-pills" data-section="${type}">
+              <button class="filter-pill ${filter==='all'?'active':''}" data-filter="all">Todas</button>
+              <button class="filter-pill ${filter==='active'?'active':''}" data-filter="active">Activas</button>
+              <button class="filter-pill ${filter==='finished'?'active':''}" data-filter="finished">Finalizadas</button>
+            </div>
+            <button class="btn btn-accent btn-sm" id="${newBtnId}">${newBtnLabel}</button>
+          </div>
+        </div>
+        <div class="league-grid">${cards}</div>
+      </section>
+    `;
+  }
+
+  function renderHome(){
+    const all = state.data.leagues;
+    const leagues = all.filter(c => c.type !== "tournament");
+    const tournaments = all.filter(c => c.type === "tournament");
 
     return `
       <div class="app-header">
         <h1>Liga<span>Tracker</span></h1>
-        <div class="sub">${leagues.length} competición${leagues.length===1?"":"es"} guardada${leagues.length===1?"":"s"}</div>
+        <div class="sub">${all.length} competición${all.length===1?"":"es"} guardada${all.length===1?"":"s"}</div>
       </div>
-      <div class="league-grid">
-        ${cards}
-        <button class="new-league-card" id="new-league-btn">+ Nueva liga</button>
-        <button class="new-league-card" id="new-tournament-btn">+ Nuevo torneo</button>
-      </div>
+      ${renderCompetitionSection("Ligas", "league", leagues, state.homeFilters.league, "new-league-btn", "+ Nueva liga")}
+      ${renderCompetitionSection("Torneos", "tournament", tournaments, state.homeFilters.tournament, "new-tournament-btn", "+ Nuevo torneo")}
       <div class="toolbar">
         <button class="btn btn-sm" id="import-btn">Importar JSON</button>
         <input type="file" id="import-file" accept="application/json">
@@ -761,6 +855,13 @@
   function bindHomeEvents(){
     document.getElementById("new-league-btn").addEventListener("click", () => openWizard("league"));
     document.getElementById("new-tournament-btn").addEventListener("click", () => openWizard("tournament"));
+    document.querySelectorAll(".filter-pill").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const section = btn.closest(".filter-pills").dataset.section;
+        state.homeFilters[section] = btn.dataset.filter;
+        render();
+      });
+    });
     document.querySelectorAll(".open-league").forEach(btn => {
       btn.addEventListener("click", () => {
         state.data.activeLeagueId = btn.dataset.id;
@@ -895,12 +996,27 @@
   function wizardStepTournamentSettings(w){
     const n = w.players.length;
     const cfg = swissConfigFor(n);
+    const playoffsChecked = w.playoffsEnabled !== false;
     return `
       <div class="wizard-header"><h3>${escapeHtml(w.name)}</h3><span class="wizard-progress">Paso 3 de 3</span></div>
       <p class="hint">Con ${n} jugadores, el torneo usará el sistema suizo:</p>
-      <p class="hint"><strong>${cfg.rounds} rondas suizas</strong> seguidas de <strong>playoffs a ${cfg.playoffSize}</strong>.</p>
+      <p class="hint"><strong>${cfg.rounds} rondas suizas</strong>.</p>
       ${n % 2 !== 0 ? `<p class="hint">Como el número de jugadores es impar, cada ronda habrá un Bye (3 pts) para un jugador distinto; nadie recibe más de un Bye en todo el torneo.</p>` : ""}
       <p class="hint">La ronda 1 se emparejará aleatoriamente. A partir de ahí, cada ronda se genera según la clasificación (puntos, OMW%, GW%), sin repetir enfrentamientos.</p>
+      <div class="field">
+        <label>Formato</label>
+        <div class="radio-group">
+          <label class="radio-option">
+            <input type="radio" name="wizard-playoffs" value="on" ${playoffsChecked ? "checked" : ""}>
+            Suiza + Playoffs (Top ${cfg.playoffSize})
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="wizard-playoffs" value="off" ${!playoffsChecked ? "checked" : ""}>
+            Solo fase suiza (sin playoffs)
+          </label>
+        </div>
+      </div>
+      <p class="hint">Sin playoffs, al terminar la última ronda suiza podrás finalizar el torneo directamente: el 1º de la clasificación será el campeón.</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="wizard-back2">Atrás</button>
         <button type="button" class="btn btn-accent" id="wizard-generate">Crear torneo</button>
@@ -959,10 +1075,12 @@
         const n = w.players.length;
         if(w.type === "tournament"){
           const cfg = swissConfigFor(n);
+          const playoffsRadio = document.querySelector('input[name="wizard-playoffs"]:checked');
+          const playoffsEnabled = !playoffsRadio || playoffsRadio.value === "on";
           const matches = generateSwissRound1(w.players);
           const comp = {
-            id: uid(), type: "tournament", name: w.name, createdAt: Date.now(),
-            players: w.players, swissRounds: cfg.rounds, playoffSize: cfg.playoffSize,
+            id: uid(), type: "tournament", name: w.name, createdAt: Date.now(), status: "active",
+            players: w.players, swissRounds: cfg.rounds, playoffSize: cfg.playoffSize, playoffsEnabled,
             currentRound: 1, matches, playoffs: null
           };
           state.data.leagues.push(comp);
@@ -971,7 +1089,7 @@
           state.wizard = null;
           saveData();
           render();
-          showToast(`Torneo creado: ${cfg.rounds} rondas suizas + playoffs a ${cfg.playoffSize}`);
+          showToast(playoffsEnabled ? `Torneo creado: ${cfg.rounds} rondas suizas + playoffs a ${cfg.playoffSize}` : `Torneo creado: ${cfg.rounds} rondas suizas (sin playoffs)`);
         } else {
           const total = totalMatchesFor(n);
           let numRounds = parseInt(document.getElementById("wizard-rounds").value, 10);
@@ -979,7 +1097,7 @@
           if(numRounds > total) numRounds = total;
           const playerIds = w.players.map(p => p.id);
           const matches = generateFixtures(playerIds, numRounds);
-          const league = { id: uid(), type: "league", name: w.name, createdAt: Date.now(), players: w.players, matches };
+          const league = { id: uid(), type: "league", name: w.name, createdAt: Date.now(), status: "active", players: w.players, matches };
           state.data.leagues.push(league);
           state.data.activeLeagueId = league.id;
           state.activeTab = "partidos";
@@ -993,13 +1111,16 @@
   }
 
   function renderLeague(league){
+    const finished = isFinished(league);
     return `
       <div class="league-topbar">
-        <button class="btn btn-sm" id="back-btn">&larr; Ligas</button>
+        <button class="btn btn-sm" id="back-btn">&larr; Competiciones</button>
         <h2>${escapeHtml(league.name)}</h2>
+        <span class="status-badge ${finished?"finished":"active"}">${finished?"Finalizada":"Activa"}</span>
         <div class="spacer"></div>
-        <button class="btn btn-sm" id="rename-btn">Renombrar</button>
+        ${!finished ? `<button class="btn btn-sm" id="rename-btn">Renombrar</button>` : ""}
         <button class="btn btn-sm" id="export-btn">Exportar</button>
+        ${!finished ? `<button class="btn btn-sm" id="finish-btn" style="color:var(--loss);">Finalizar liga</button>` : ""}
       </div>
       <div class="tabs">
         <button class="tab ${state.activeTab==='jugadores'?'active':''}" data-tab="jugadores">Jugadores</button>
@@ -1015,12 +1136,17 @@
   }
 
   function renderPlayersTab(league){
+    const finished = isFinished(league);
     const chips = league.players.map(p => `
       <div class="player-chip">
         ${escapeHtml(p.name)}
-        <button class="remove-player" data-id="${p.id}" title="Eliminar jugador">&times;</button>
+        ${finished ? "" : `<button class="remove-player" data-id="${p.id}" title="Eliminar jugador">&times;</button>`}
       </div>
     `).join("") || `<span class="hint">Todavía no hay jugadores.</span>`;
+
+    if(finished){
+      return `<div class="panel"><h3>Jugadores</h3><div class="player-list">${chips}</div></div>`;
+    }
 
     return `
       <div class="panel">
@@ -1037,8 +1163,21 @@
     `;
   }
 
-  function renderMatchRow(m, league){
+  function renderMatchRow(m, league, readOnly){
     const played = isPlayed(m);
+    if(readOnly){
+      return `
+        <div class="match-row">
+          <div class="pname">${escapeHtml(playerName(league,m.playerAId))}</div>
+          <div class="score-display">${played ? m.mapsA : "-"}</div>
+          <div class="dash">&ndash;</div>
+          <div class="score-display">${played ? m.mapsB : "-"}</div>
+          <div class="pname away">${escapeHtml(playerName(league,m.playerBId))}</div>
+          ${played ? matchResultBadge(m, league) : `<span class="badge pending">Pendiente</span>`}
+          <div class="match-actions"></div>
+        </div>
+      `;
+    }
     return `
       <form class="match-row" data-id="${m.id}">
         <div class="pname">${escapeHtml(playerName(league,m.playerAId))}</div>
@@ -1059,6 +1198,7 @@
     if(league.players.length < 2){
       return `<div class="empty-state"><div class="big">Añade al menos 2 jugadores</div>Ve a la pestaña Jugadores para empezar.</div>`;
     }
+    const finished = isFinished(league);
     const options = league.players.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
     const maxJornada = league.matches.reduce((m, x) => Math.max(m, x.jornada || 1), 0);
     const playedCount = league.matches.filter(isPlayed).length;
@@ -1072,7 +1212,7 @@
     const matchesHtml = jornadaKeys.map(j => `
       <div class="jornada-group">
         <div class="jornada-label">Jornada ${j}</div>
-        ${groups[j].map(m => renderMatchRow(m, league)).join("")}
+        ${groups[j].map(m => renderMatchRow(m, league, finished)).join("")}
       </div>
     `).join("") || `<div class="hint">Todavía no hay partidos programados. Usa "Regenerar calendario" o añade partidos manualmente.</div>`;
 
@@ -1082,11 +1222,13 @@
           <h3 style="margin:0;">Calendario</h3>
           <div class="matches-toolbar-actions">
             <span class="hint" style="margin:0;">${playedCount}/${league.matches.length} jugados</span>
-            <button class="btn btn-sm" id="regen-schedule-btn">Regenerar calendario</button>
-            <button class="btn btn-sm" id="toggle-manual-form">${state.manualFormOpen ? "Ocultar formulario" : "+ Partido manual"}</button>
+            ${finished ? "" : `
+              <button class="btn btn-sm" id="regen-schedule-btn">Regenerar calendario</button>
+              <button class="btn btn-sm" id="toggle-manual-form">${state.manualFormOpen ? "Ocultar formulario" : "+ Partido manual"}</button>
+            `}
           </div>
         </div>
-        ${state.manualFormOpen ? `
+        ${(!finished && state.manualFormOpen) ? `
           <form id="add-match-form" class="form-row" style="margin-top:16px;">
             <div class="field">
               <label for="m-jornada">Jornada</label>
@@ -1164,13 +1306,16 @@
       saveData();
       render();
     });
-    document.getElementById("rename-btn").addEventListener("click", () => {
-      const name = prompt("Nuevo nombre de la liga:", league.name);
-      if(!name) return;
-      league.name = name.trim();
-      saveData();
-      render();
-    });
+    const renameBtn = document.getElementById("rename-btn");
+    if(renameBtn){
+      renameBtn.addEventListener("click", () => {
+        const name = prompt("Nuevo nombre de la liga:", league.name);
+        if(!name) return;
+        league.name = name.trim();
+        saveData();
+        render();
+      });
+    }
     document.getElementById("export-btn").addEventListener("click", () => {
       const blob = new Blob([JSON.stringify({ leagues: [league] }, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -1180,6 +1325,17 @@
       a.click();
       URL.revokeObjectURL(url);
     });
+    const finishBtn = document.getElementById("finish-btn");
+    if(finishBtn){
+      finishBtn.addEventListener("click", () => {
+        if(!confirm(`¿Finalizar la liga "${league.name}"? La clasificación actual quedará como definitiva y ya no podrás editar jugadores, partidos ni ajustes. Esta acción no se puede deshacer.`)) return;
+        league.status = "finished";
+        league.finishedAt = Date.now();
+        saveData();
+        render();
+        showToast("Liga finalizada");
+      });
+    }
 
     document.querySelectorAll(".tab").forEach(tab => {
       tab.addEventListener("click", () => {
@@ -1289,19 +1445,22 @@
   }
 
   // ---------- Tournament view ----------
-  function bindTopbarEvents(comp, backLabel){
+  function bindTopbarEvents(comp){
     document.getElementById("back-btn").addEventListener("click", () => {
       state.data.activeLeagueId = null;
       saveData();
       render();
     });
-    document.getElementById("rename-btn").addEventListener("click", () => {
-      const name = prompt("Nuevo nombre:", comp.name);
-      if(!name) return;
-      comp.name = name.trim();
-      saveData();
-      render();
-    });
+    const renameBtn = document.getElementById("rename-btn");
+    if(renameBtn){
+      renameBtn.addEventListener("click", () => {
+        const name = prompt("Nuevo nombre:", comp.name);
+        if(!name) return;
+        comp.name = name.trim();
+        saveData();
+        render();
+      });
+    }
     document.getElementById("export-btn").addEventListener("click", () => {
       const blob = new Blob([JSON.stringify({ leagues: [comp] }, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -1311,6 +1470,17 @@
       a.click();
       URL.revokeObjectURL(url);
     });
+    const finishBtn = document.getElementById("finish-btn");
+    if(finishBtn && !finishBtn.disabled){
+      finishBtn.addEventListener("click", () => {
+        if(!confirm(`¿Finalizar el torneo "${comp.name}"? La clasificación quedará como definitiva y ya no podrás editar jugadores, resultados ni ajustes. Esta acción no se puede deshacer.`)) return;
+        comp.status = "finished";
+        comp.finishedAt = Date.now();
+        saveData();
+        render();
+        showToast("Torneo finalizado");
+      });
+    }
     document.querySelectorAll(".tab").forEach(tab => {
       tab.addEventListener("click", () => {
         state.activeTab = tab.dataset.tab;
@@ -1320,26 +1490,43 @@
   }
 
   function renderTournamentView(t){
+    const finished = isFinished(t);
+    let finishBtnHtml = "";
+    if(!finished){
+      const onLastRound = t.currentRound === t.swissRounds;
+      const lastRoundComplete = onLastRound && t.matches.filter(m => m.round === t.currentRound).every(isPlayed);
+      const eligible = playoffsOn(t)
+        ? (!!t.playoffs && !!tournamentChampion(t))
+        : lastRoundComplete;
+      const title = playoffsOn(t)
+        ? "Completa la fase suiza y los playoffs para poder finalizar el torneo."
+        : "Completa todas las rondas suizas para poder finalizar el torneo.";
+      finishBtnHtml = eligible
+        ? `<button class="btn btn-sm" id="finish-btn" style="color:var(--loss);">Finalizar torneo</button>`
+        : `<button class="btn btn-sm" id="finish-btn" disabled title="${title}">Finalizar torneo</button>`;
+    }
     return `
       <div class="league-topbar">
         <button class="btn btn-sm" id="back-btn">&larr; Competiciones</button>
         <h2>${escapeHtml(t.name)}</h2>
         <span class="type-badge">Torneo</span>
+        <span class="status-badge ${finished?"finished":"active"}">${finished?"Finalizada":"Activa"}</span>
         <div class="spacer"></div>
-        <button class="btn btn-sm" id="rename-btn">Renombrar</button>
+        ${!finished ? `<button class="btn btn-sm" id="rename-btn">Renombrar</button>` : ""}
         <button class="btn btn-sm" id="export-btn">Exportar</button>
+        ${finishBtnHtml}
       </div>
       <div class="tabs">
         <button class="tab ${state.activeTab==='jugadores'?'active':''}" data-tab="jugadores">Jugadores</button>
         <button class="tab ${state.activeTab==='rondas'?'active':''}" data-tab="rondas">Rondas Suizas</button>
         <button class="tab ${state.activeTab==='clasificacion'?'active':''}" data-tab="clasificacion">Clasificación</button>
-        <button class="tab ${state.activeTab==='playoffs'?'active':''}" data-tab="playoffs">Playoffs</button>
+        ${playoffsOn(t) ? `<button class="tab ${state.activeTab==='playoffs'?'active':''}" data-tab="playoffs">Playoffs</button>` : ""}
       </div>
       <div id="tab-content">
         ${state.activeTab==='jugadores' ? renderTournamentPlayersTab(t) : ""}
         ${state.activeTab==='rondas' ? renderSwissRoundsTab(t) : ""}
         ${state.activeTab==='clasificacion' ? renderSwissStandingsTab(t) : ""}
-        ${state.activeTab==='playoffs' ? renderPlayoffsTab(t) : ""}
+        ${(state.activeTab==='playoffs' && playoffsOn(t)) ? renderPlayoffsTab(t) : ""}
       </div>
     `;
   }
@@ -1355,7 +1542,7 @@
     `;
   }
 
-  function renderSwissMatchRow(m, t){
+  function renderSwissMatchRow(m, t, readOnly){
     if(m.isBye){
       return `
         <div class="bye-row">
@@ -1365,6 +1552,19 @@
       `;
     }
     const played = isPlayed(m);
+    if(readOnly){
+      return `
+        <div class="match-row">
+          <div class="pname">${escapeHtml(playerName(t,m.playerAId))}</div>
+          <div class="score-display">${played ? m.mapsA : "-"}</div>
+          <div class="dash">&ndash;</div>
+          <div class="score-display">${played ? m.mapsB : "-"}</div>
+          <div class="pname away">${escapeHtml(playerName(t,m.playerBId))}</div>
+          ${played ? matchResultBadge(m, t) : `<span class="badge pending">Pendiente</span>`}
+          <div class="match-actions"></div>
+        </div>
+      `;
+    }
     return `
       <form class="match-row swiss-match-row" data-id="${m.id}">
         <div class="pname">${escapeHtml(playerName(t,m.playerAId))}</div>
@@ -1381,6 +1581,7 @@
   }
 
   function renderSwissRoundsTab(t){
+    const finished = isFinished(t);
     const groups = {};
     t.matches.forEach(m => { (groups[m.round] = groups[m.round] || []).push(m); });
     const roundKeys = Object.keys(groups).map(Number).sort((a,b)=>a-b);
@@ -1390,22 +1591,28 @@
       return `
         <div class="jornada-group">
           <div class="jornada-label">Ronda ${r} ${complete ? '<span class="badge vl" style="margin-left:8px;">Completa</span>' : ""}</div>
-          ${groups[r].map(m => renderSwissMatchRow(m, t)).join("")}
+          ${groups[r].map(m => renderSwissMatchRow(m, t, finished)).join("")}
         </div>
       `;
     }).join("");
 
-    const lastRound = roundKeys.length ? Math.max(...roundKeys) : 0;
-    const lastComplete = lastRound > 0 && groups[lastRound].every(isPlayed);
     let actionHtml = "";
-    if(lastComplete && lastRound < t.swissRounds){
-      actionHtml = `<button class="btn btn-accent" id="gen-next-round-btn">Generar Ronda ${lastRound+1}</button>`;
-    } else if(lastComplete && lastRound === t.swissRounds){
-      actionHtml = t.playoffs
-        ? `<div class="hint">Fase suiza completada. Consulta la pestaña Playoffs.</div>`
-        : `<button class="btn btn-accent" id="gen-playoffs-btn">Generar Playoffs</button>`;
-    } else if(!lastComplete){
-      actionHtml = `<div class="hint">Completa todos los partidos de la ronda ${lastRound} para generar la siguiente.</div>`;
+    if(!finished){
+      const lastRound = roundKeys.length ? Math.max(...roundKeys) : 0;
+      const lastComplete = lastRound > 0 && groups[lastRound].every(isPlayed);
+      if(lastComplete && lastRound < t.swissRounds){
+        actionHtml = `<button class="btn btn-accent" id="gen-next-round-btn">Generar Ronda ${lastRound+1}</button>`;
+      } else if(lastComplete && lastRound === t.swissRounds){
+        if(!playoffsOn(t)){
+          actionHtml = `<div class="hint">Fase suiza completada. Pulsa "Finalizar torneo" arriba para cerrar el torneo: el 1º de la clasificación será el campeón.</div>`;
+        } else {
+          actionHtml = t.playoffs
+            ? `<div class="hint">Fase suiza completada. Consulta la pestaña Playoffs.</div>`
+            : `<button class="btn btn-accent" id="gen-playoffs-btn">Generar Playoffs</button>`;
+        }
+      } else if(!lastComplete){
+        actionHtml = `<div class="hint">Completa todos los partidos de la ronda ${lastRound} para generar la siguiente.</div>`;
+      }
     }
 
     return `
@@ -1452,37 +1659,42 @@
     `;
   }
 
-  function renderPlayoffMatch(m, t){
+  function renderPlayoffMatch(m, t, readOnly){
     const aName = m.playerAId ? escapeHtml(playerName(t, m.playerAId)) : "Por determinar";
     const bName = m.playerBId ? escapeHtml(playerName(t, m.playerBId)) : "Por determinar";
     const canPlay = m.playerAId && m.playerBId;
     const winner = canPlay ? matchWinnerId(m) : null;
     const played = canPlay && isPlayed(m);
+    const showForm = canPlay && !readOnly;
     return `
       <form class="playoff-match" data-id="${m.id}">
         <div class="po-row">
           <div class="po-player ${winner===m.playerAId?"winner":""}">${aName}</div>
-          ${canPlay ? `<input type="number" class="score-input" name="mapsA" min="0" placeholder="-" value="${played ? m.mapsA : ""}">` : `<span class="score-input placeholder">-</span>`}
+          ${showForm ? `<input type="number" class="score-input" name="mapsA" min="0" placeholder="-" value="${played ? m.mapsA : ""}">` : `<span class="score-input placeholder">${canPlay && played ? m.mapsA : "-"}</span>`}
         </div>
         <div class="po-row">
           <div class="po-player ${winner===m.playerBId?"winner":""}">${bName}</div>
-          ${canPlay ? `<input type="number" class="score-input" name="mapsB" min="0" placeholder="-" value="${played ? m.mapsB : ""}">` : `<span class="score-input placeholder">-</span>`}
+          ${showForm ? `<input type="number" class="score-input" name="mapsB" min="0" placeholder="-" value="${played ? m.mapsB : ""}">` : `<span class="score-input placeholder">${canPlay && played ? m.mapsB : "-"}</span>`}
         </div>
-        ${canPlay ? `<button type="submit" class="btn btn-accent btn-sm">${played ? "Actualizar" : "Guardar"}</button>` : ""}
+        ${showForm ? `<button type="submit" class="btn btn-accent btn-sm">${played ? "Actualizar" : "Guardar"}</button>` : ""}
       </form>
     `;
   }
 
   function renderPlayoffsTab(t){
+    if(!playoffsOn(t)){
+      return `<div class="empty-state"><div class="big">Sin playoffs</div>Este torneo solo usa fase suiza. El campeón es el 1º de la clasificación una vez finalizado.</div>`;
+    }
     if(!t.playoffs){
       return `<div class="empty-state"><div class="big">Playoffs pendientes</div>Se generarán automáticamente al completar la fase suiza.</div>`;
     }
+    const finished = isFinished(t);
     const champ = tournamentChampion(t);
     const totalRounds = t.playoffs.rounds.length;
     const columns = t.playoffs.rounds.map((round, idx) => `
       <div class="playoff-round">
         <div class="playoff-round-label">${roundLabel(idx, totalRounds)}</div>
-        ${round.map(m => renderPlayoffMatch(m, t)).join("")}
+        ${round.map(m => renderPlayoffMatch(m, t, finished)).join("")}
       </div>
     `).join("");
 
