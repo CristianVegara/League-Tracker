@@ -5,7 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Liga Tracker — Web</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' https://cdn.jsdelivr.net;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src https://fonts.gstatic.com;
+  connect-src 'self' https://*.supabase.co;
+  img-src 'self' data:;
+  base-uri 'self';
+  form-action 'self';
+  frame-ancestors 'none';
+">
+<!--
+  Note on style-src 'unsafe-inline': this file uses inline style="" attributes
+  throughout its render functions. That's a real relaxation of the CSP —
+  script-src stays strict (no inline scripts, no eval), which is the half
+  that actually matters for code execution, but moving every inline style to
+  a CSS class would let this be tightened further. See SECURITY.md.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 <style>
   /* ==========================================================
      Same token system as the original app (Brutalist theme only
@@ -148,8 +166,8 @@
   // CONFIG — fill these in from your Supabase project:
   // Project Settings > API > Project URL / anon public key
   // ============================================================
-  const SUPABASE_URL = "https://tcwtjtfqejptikatntpr.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_UcrDxdhDz2Ny8fa8wwPyfQ_2OK7f2hk";
+  const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
+  const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
 
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -378,19 +396,37 @@
           ` : ""}
           <div class="field">
             <label for="auth-email">Email</label>
-            <input id="auth-email" type="email" placeholder="tu@email.com" required>
+            <input id="auth-email" type="email" placeholder="tu@email.com" required autocomplete="email">
           </div>
           <div class="field">
             <label for="auth-password">Contraseña</label>
-            <input id="auth-password" type="password" placeholder="••••••••" minlength="6" required>
+            <input id="auth-password" type="password" placeholder="••••••••" minlength="10" required
+              autocomplete="${isLogin ? "current-password" : "new-password"}">
+            ${!isLogin ? `<span class="hint" style="margin-top:2px;">Mínimo 10 caracteres.</span>` : ""}
           </div>
           ${state.authError ? `<div class="error">${escapeHtml(state.authError)}</div>` : ""}
           <button type="submit" class="btn btn-accent" style="width:100%;margin-top:6px;" ${state.busy?"disabled":""}>
             ${isLogin ? "Entrar" : "Crear cuenta"}
           </button>
+          ${isLogin ? `<button type="button" id="forgot-password-btn" class="btn btn-ghost" style="width:100%;margin-top:8px;">¿Olvidaste tu contraseña?</button>` : ""}
         </form>
       </div>
     `;
+  }
+
+  // OWASP A07 (Identification & Authentication Failures): never reveal
+  // *why* a login failed, or whether a given email is already registered —
+  // both are classic account-enumeration leaks. Signup keeps one narrow
+  // exception (password too short) since that's not identity-revealing.
+  function authFriendlyError(mode, err){
+    const raw = (err && err.message) || "";
+    if(mode === "login"){
+      return "Email o contraseña incorrectos.";
+    }
+    if(/password/i.test(raw) && /(least|short|characters|weak)/i.test(raw)){
+      return "La contraseña es demasiado corta o débil.";
+    }
+    return "No se pudo crear la cuenta. Inténtalo de nuevo.";
   }
 
   function bindAuth(){
@@ -420,11 +456,22 @@
           if(error) throw error;
         }
       } catch(err){
-        state.authError = err.message || "Error de autenticación";
+        state.authError = authFriendlyError(state.authMode, err);
       }
       state.busy = false;
       await refreshSession();
     });
+    const forgotBtn = document.getElementById("forgot-password-btn");
+    if(forgotBtn){
+      forgotBtn.addEventListener("click", async () => {
+        const email = document.getElementById("auth-email").value.trim();
+        if(!email){ state.authError = "Escribe tu email arriba primero."; render(); return; }
+        await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+        // Same message regardless of whether the email exists — otherwise
+        // this endpoint becomes another enumeration vector (OWASP A07).
+        showToast("Si ese email existe, te hemos enviado un enlace para restablecer la contraseña.");
+      });
+    }
   }
 
   function renderDashboard(){

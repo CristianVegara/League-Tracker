@@ -35,15 +35,16 @@ foundation.
 
    Replace both placeholder strings with your actual values.
 
-## 4. (Recommended while testing) Turn off email confirmation
+## 4. Recommended Auth settings
 
-By default Supabase requires confirming your email before you can log in. While you're
-testing locally, this is one extra step you probably don't want:
+- **Authentication > Policies**: set minimum password length to at least 10, to
+  match what the app's signup form already expects.
+- **Authentication > Providers > Email**: while testing locally, you can turn off
+  **Confirm email** to skip that step — turn it back on before inviting real people,
+  so accounts can't be created with emails the person doesn't actually own.
 
-1. **Authentication > Providers > Email**.
-2. Turn off **Confirm email**.
-3. Turn it back on before you invite real people, so accounts can't be created with
-   emails the person doesn't actually own.
+See `SECURITY.md` for the full reasoning (mapped to OWASP Top 10) behind these and a
+few other settings worth reviewing before this goes live with real users.
 
 ## 5. Try it locally
 
@@ -52,11 +53,15 @@ local testing (Supabase is a plain HTTPS API, it works fine from a `file://` pag
 
 ## 6. Host it for real
 
-Once it works locally, put `index.html` on any static host so other people can reach
-it — Netlify, Vercel, GitHub Pages, or Cloudflare Pages all have free tiers and work
-by just dragging the file in or connecting a repo. The `SUPABASE_URL`/`SUPABASE_ANON_KEY`
-values are meant to be public (that's what Row Level Security in `schema.sql` is for),
-so there's no secret-management step here.
+Once it works locally, put `index.html` **and `_headers`** on any static host so
+other people can reach it — Netlify, Vercel, GitHub Pages, or Cloudflare Pages all
+have free tiers and work by just dragging the files in or connecting a repo. The
+`_headers` file (Netlify's format) applies a few extra security headers at the HTTP
+level that can't be set from inside the HTML itself — see `SECURITY.md`. If you're
+not on Netlify, translate those same three headers into your host's config format.
+
+The `SUPABASE_URL`/`SUPABASE_ANON_KEY` values are meant to be public (that's what Row
+Level Security in `schema.sql` is for), so there's no secret-management step here.
 
 ## Notes on how this maps to the original app
 

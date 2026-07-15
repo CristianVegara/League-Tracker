@@ -1,0 +1,10 @@
+# Netlify reads this file automatically at deploy time and applies these
+# headers to every response. If you're hosting elsewhere (Vercel, Cloudflare
+# Pages, GitHub Pages + a CDN, etc.), your host will have its own equivalent
+# config format — the three headers below are what matter, wherever they end
+# up configured. See SECURITY.md (OWASP A05) for why each one is here.
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
